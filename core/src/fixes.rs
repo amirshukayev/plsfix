@@ -406,23 +406,59 @@ pub fn decode_inconsistent_utf8(text: &str) -> Cow<str> {
     different one. This is common enough that we need to be able to fix it.
 
     This is used as a transcoder within `fix_encoding`.
+
+    Note: We manually check the lookbehind condition (previous char not in
+    utf8_continuation_strict) to avoid catastrophic backtracking from fancy-regex.
     */
 
-    let result = UTF8_DETECTOR_RE.replace_all(&text, |mat: &fancy_regex::Captures| {
-        let substr = mat.get(0).unwrap().as_str();
+    use crate::chardata::UTF8_CONTINUATION_STRICT_CHARS;
 
-        if substr.len() < text.len() && is_bad(&substr) {
-            let fixed = fix_encoding_and_explain(&substr, false, None);
-            fixed.text
+    let mut result = String::new();
+    let mut last_end = 0;
+
+    for mat in UTF8_DETECTOR_RE.find_iter(text) {
+        let start = mat.start();
+        let end = mat.end();
+
+        // Manual lookbehind check: previous char must not be in continuation_strict set
+        let prev_char = if start > 0 {
+            text[..start].chars().next_back()
         } else {
-            substr.to_string()
-        }
-    });
+            None
+        };
 
-    result
+        let should_process = match prev_char {
+            None => true,  // Beginning of string - process
+            Some(ch) => !UTF8_CONTINUATION_STRICT_CHARS.contains(&ch),  // Process if NOT in set
+        };
+
+        if should_process {
+            // Add text before match
+            result.push_str(&text[last_end..start]);
+
+            let substr = mat.as_str();
+            if substr.len() < text.len() && is_bad(&substr) {
+                let fixed = fix_encoding_and_explain(&substr, false, None);
+                result.push_str(&fixed.text);
+            } else {
+                result.push_str(substr);
+            }
+
+            last_end = end;
+        }
+    }
+
+    if last_end == 0 {
+        // No replacements made
+        Cow::Borrowed(text)
+    } else {
+        // Add remaining text
+        result.push_str(&text[last_end..]);
+        Cow::Owned(result)
+    }
 }
 
-fn _c1_fixer(mat: &fancy_regex::Captures) -> String {
+fn _c1_fixer(mat: &regex::Captures) -> String {
     let mat = mat.get(0).unwrap().as_str().to_string();
 
     let encoded = LATIN_1.encode(&mat);
@@ -438,7 +474,7 @@ pub fn fix_c1_controls(text: &str) -> Cow<str> {
     If text still contains C1 control characters, treat them as their
     Windows-1252 equivalents. This matches what Web browsers do.
     */
-    C1_CONTROL_RE.replace_all(text, |caps: &fancy_regex::Captures| _c1_fixer(&caps))
+    C1_CONTROL_RE.replace_all(text, |caps: &regex::Captures| _c1_fixer(&caps))
 }
 
 #[cfg(test)]

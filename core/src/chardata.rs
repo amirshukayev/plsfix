@@ -242,8 +242,8 @@ lazy_static! {
     This regex matches C1 control characters, which occupy some of the positions
     in the Latin-1 character map that Windows assigns to other characters instead.
     */
-    pub static ref C1_CONTROL_RE: fancy_regex::Regex =
-        fancy_regex::Regex::new(r"[\x80-\x9f]").unwrap();
+    pub static ref C1_CONTROL_RE: regex::Regex =
+        regex::Regex::new(r"[\x80-\x9f]").unwrap();
 
     /*
     A translate mapping that breaks ligatures made of Latin letters. While
@@ -326,35 +326,35 @@ lazy_static! {
     lowercase letter, will prevent some cases of inconsistent UTF-8 from being
     fixed when they don't see it.
     */
-    pub static ref UTF8_DETECTOR_RE: fancy_regex::Regex = {
-        fancy_regex::Regex::new(
-        &format!(
-            r"(?<![{utf8_continuation_strict}])
-(
-[{utf8_first_of_2}][{utf8_continuation}]
-|
-[{utf8_first_of_3}][{utf8_continuation}]{{2}}
-|
-[{utf8_first_of_4}][{utf8_continuation}]{{3}}
-)+",
-            // Letters that decode to 0x80 - 0xBF in a Latin-1-like encoding,
-            // and don't usually stand for themselves when adjacent to mojibake.
-            // This excludes spaces, dashes, quotation marks, and ellipses.
-            utf8_continuation_strict = r"\x80-\xbfĄąĽľŁłŒœŚśŞşŠšŤťŸŹźŻżŽžƒˆˇ˘˛˜˝΄΅ΆΈΉΊΌΎΏЁЂЃЄЅІЇЈЉЊЋЌЎЏёђѓєѕіїјљњћќўџҐґ†‡•‰‹›€№™",
-            // Letters that decode to 0xC2 - 0xDF in a Latin-1-like encoding
-            utf8_first_of_2 = "ÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ×ØÙÚÛÜÝÞßĂĆČĎĐĘĚĞİĹŃŇŐŘŞŢŮŰΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩΪΫάέήίВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ",
-            // Letters that decode to 0xE0 - 0xEF in a Latin-1-like encoding
-            utf8_first_of_3 = "àáâãäåæçèéêëìíîïăćčďęěĺŕΰαβγδεζηθικλμνξοабвгдежзийклмноп",
-            // Letters that decode to 0xF0 or 0xF3 in a Latin-1-like encoding.
-            // # (Other leading bytes correspond only to unassigned codepoints)
-            utf8_first_of_4 = "ðóđğπσру",
-            // Letters that decode to 0x80 - 0xBF in a Latin-1-like encoding,
-            // including a space standing in for 0xA0
-            utf8_continuation = r"\x80-\xbfĄąĽľŁłŒœŚśŞşŠšŤťŸŹźŻżŽžƒˆˇ˘˛˜˝΄΅ΆΈΉΊΌΎΏЁЂЃЄЅІЇЈЉЊЋЌЎЏёђѓєѕіїјљњћќўџҐґ–—―‘’‚“”„†‡•…‰‹›€№™ "
+    pub static ref UTF8_DETECTOR_RE: regex::Regex = {
+        let utf8_continuation = r#"\x80-\xbfĄąĽľŁłŒœŚśŞşŠšŤťŸŹźŻżŽžƒˆˇ˘˛˜˝΄΅ΆΈΉΊΌΎΏЁЂЃЄЅІЇЈЉЊЋЌЎЏёђѓєѕіїјљњћќўџҐґ–—―''‚""„†‡•…‰‹›€№™ "#;
+        let utf8_first_of_2 = "ÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ×ØÙÚÛÜÝÞßĂĆČĎĐĘĚĞİĹŃŇŐŘŞŢŮŰΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩΪΫάέήίВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ";
+        let utf8_first_of_3 = "àáâãäåæçèéêëìíîïăćčďęěĺŕΰαβγδεζηθικλμνξοабвгдежзийклмноп";
+        let utf8_first_of_4 = "ðóđğπσру";
+
+        regex::Regex::new(
+            &format!(
+                r"([{utf8_first_of_2}][{utf8_continuation}]|[{utf8_first_of_3}][{utf8_continuation}]{{2}}|[{utf8_first_of_4}][{utf8_continuation}]{{3}})+"
+            )
         )
-        .replace("\n", ""),
-    )
-    .expect("Failed to compile the regex")
+        .expect("Failed to compile the regex")
+    };
+
+    // Character set for lookbehind check (moved out of regex for O(n) performance)
+    // Matches the utf8_continuation_strict character class: \x80-\xbf plus specific Unicode chars
+    pub static ref UTF8_CONTINUATION_STRICT_CHARS: rustc_hash::FxHashSet<char> = {
+        let mut set = rustc_hash::FxHashSet::default();
+        // Add range \x80-\xbf (chars 128-191)
+        for c in 0x80u32..=0xbfu32 {
+            if let Some(ch) = char::from_u32(c) {
+                set.insert(ch);
+            }
+        }
+        // Add explicit Unicode characters from the original pattern
+        for ch in "ĄąĽľŁłŒœŚśŞşŠšŤťŸŹźŻżŽžƒˆˇ˘˛˜˝΄΅ΆΈΉΊΌΎΏЁЂЃЄЅІЇЈЉЊЋЌЎЏёђѓєѕіїјљњћќўџҐґ†‡•‰‹›€№™".chars() {
+            set.insert(ch);
+        }
+        set
     };
 }
 
