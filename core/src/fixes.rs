@@ -409,33 +409,41 @@ pub fn decode_inconsistent_utf8(text: &str) -> Cow<str> {
 
     Note: We manually check the lookbehind condition (previous char not in
     utf8_continuation_strict) to avoid catastrophic backtracking from fancy-regex.
+    This implementation is O(n) by tracking the previous character in a single pass.
     */
 
     use crate::chardata::UTF8_CONTINUATION_STRICT_CHARS;
 
+    // Collect all matches first
+    let matches: Vec<_> = UTF8_DETECTOR_RE.find_iter(text).collect();
+
+    if matches.is_empty() {
+        return Cow::Borrowed(text);
+    }
+
+    // Build a map of byte position -> previous character in O(n)
+    let mut prev_char_at_pos: std::collections::HashMap<usize, Option<char>> = std::collections::HashMap::new();
+    let mut prev_char = None;
+    for (byte_pos, ch) in text.char_indices() {
+        prev_char_at_pos.insert(byte_pos, prev_char);
+        prev_char = Some(ch);
+    }
+
     let mut result = String::new();
     let mut last_end = 0;
 
-    for mat in UTF8_DETECTOR_RE.find_iter(text) {
-        let start = mat.start();
-        let end = mat.end();
+    for mat in matches {
+        let s = mat.start();
+        let e = mat.end();
 
-        // Manual lookbehind check: previous char must not be in continuation_strict set
-        let prev_char = if start > 0 {
-            text[..start].chars().next_back()
-        } else {
-            None
-        };
-
-        let should_process = match prev_char {
-            None => true,  // Beginning of string - process
-            Some(ch) => !UTF8_CONTINUATION_STRICT_CHARS.contains(&ch),  // Process if NOT in set
+        let prev = prev_char_at_pos.get(&s).copied().flatten();
+        let should_process = match prev {
+            None => true,
+            Some(ch) => !UTF8_CONTINUATION_STRICT_CHARS.contains(&ch),
         };
 
         if should_process {
-            // Add text before match
-            result.push_str(&text[last_end..start]);
-
+            result.push_str(&text[last_end..s]);
             let substr = mat.as_str();
             if substr.len() < text.len() && is_bad(&substr) {
                 let fixed = fix_encoding_and_explain(&substr, false, None);
@@ -443,8 +451,7 @@ pub fn decode_inconsistent_utf8(text: &str) -> Cow<str> {
             } else {
                 result.push_str(substr);
             }
-
-            last_end = end;
+            last_end = e;
         }
     }
 
