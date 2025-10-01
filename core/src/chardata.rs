@@ -327,7 +327,9 @@ lazy_static! {
     fixed when they don't see it.
     */
     pub static ref UTF8_DETECTOR_RE: regex::Regex = {
-        let utf8_continuation = r#"\x80-\xbfĄąĽľŁłŒœŚśŞşŠšŤťŸŹźŻżŽžƒˆˇ˘˛˜˝΄΅ΆΈΉΊΌΎΏЁЂЃЄЅІЇЈЉЊЋЌЎЏёђѓєѕіїјљњћќўџҐґ–—―''‚""„†‡•…‰‹›€№™ "#;
+        // Add curly quotes U+2018, U+2019, U+201C, U+201D which are missing from the original
+        let utf8_continuation = format!(r#"\x80-\xbfĄąĽľŁłŒœŚśŞşŠšŤťŸŹźŻżŽžƒˆˇ˘˛˜˝΄΅ΆΈΉΊΌΎΏЁЂЃЄЅІЇЈЉЊЋЌЎЏёђѓєѕіїјљњћќўџҐґ–—―'{}{}‚{}{}„†‡•…‰‹›€№™ "#,
+            '\u{2018}', '\u{2019}', '\u{201C}', '\u{201D}');
         let utf8_first_of_2 = "ÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ×ØÙÚÛÜÝÞßĂĆČĎĐĘĚĞİĹŃŇŐŘŞŢŮŰΒΓΔΕΖΗΘΙΚΛΜΝΞΟΠΡΣΤΥΦΧΨΩΪΫάέήίВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ";
         let utf8_first_of_3 = "àáâãäåæçèéêëìíîïăćčďęěĺŕΰαβγδεζηθικλμνξοабвгдежзийклмноп";
         let utf8_first_of_4 = "ðóđğπσру";
@@ -351,7 +353,8 @@ lazy_static! {
             }
         }
         // Add explicit Unicode characters from the original pattern
-        for ch in "ĄąĽľŁłŒœŚśŞşŠšŤťŸŹźŻżŽžƒˆˇ˘˛˜˝΄΅ΆΈΉΊΌΎΏЁЂЃЄЅІЇЈЉЊЋЌЎЏёђѓєѕіїјљњћќўџҐґ†‡•‰‹›€№™".chars() {
+        // Add explicit Unicode characters from the original pattern, including curly quotes
+        for ch in "ĄąĽľŁłŒœŚśŞşŠšŤťŸŹźŻżŽžƒˆˇ˘˛˜˝΄΅ΆΈΉΊΌΎΏЁЂЃЄЅІЇЈЉЊЋЌЎЏёђѓєѕіїјљњћќўџҐґ–—―\u{2018}\u{2019}‚\u{201C}\u{201D}„†‡•…‰‹›€№™".chars() {
             set.insert(ch);
         }
         set

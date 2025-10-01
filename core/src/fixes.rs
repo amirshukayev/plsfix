@@ -445,9 +445,25 @@ pub fn decode_inconsistent_utf8(text: &str) -> Cow<str> {
         if should_process {
             result.push_str(&text[last_end..s]);
             let substr = mat.as_str();
-            if substr.len() < text.len() && is_bad(&substr) {
-                let fixed = fix_encoding_and_explain(&substr, false, None);
-                result.push_str(&fixed.text);
+            if is_bad(&substr) {
+                // Only attempt to fix if this substring is bad
+                use crate::codecs::sloppy::SLOPPY_WINDOWS_1252;
+                // Try Windows-1252 encoding first (most common case)
+                if let Ok(mut encoded_bytes) = SLOPPY_WINDOWS_1252.encode(substr) {
+                    // Try restore_byte_a0 to handle cases where space should be non-breaking space
+                    let restored_bytes = restore_byte_a0(&encoded_bytes);
+                    if restored_bytes != encoded_bytes {
+                        encoded_bytes = restored_bytes;
+                    }
+
+                    if let Ok(fixed_str) = std::str::from_utf8(&encoded_bytes) {
+                        result.push_str(fixed_str);
+                    } else {
+                        result.push_str(substr);
+                    }
+                } else {
+                    result.push_str(substr);
+                }
             } else {
                 result.push_str(substr);
             }
@@ -488,6 +504,33 @@ pub fn fix_c1_controls(text: &str) -> Cow<str> {
 mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
+
+    #[test]
+    fn test_em_dash_mojibake() {
+        // â€" is the mojibake for – (en dash U+2013)
+        // UTF-8 bytes of en dash [0xE2, 0x80, 0x93] decoded as Windows-1252:
+        // 0xE2=â (U+00E2), 0x80=€ (U+20AC), 0x93=" (U+201C left double quote)
+        let mojibake = "\u{00E2}\u{20AC}\u{201C}"; // â€"
+        let input = format!("ISO 27001 : 2005 {} Requirements", mojibake);
+
+        let result = decode_inconsistent_utf8(&input);
+        assert_eq!(result, "ISO 27001 : 2005 – Requirements");
+    }
+
+    #[test]
+    fn test_em_dash_regex_match() {
+        use crate::chardata::UTF8_DETECTOR_RE;
+
+        let input = r#"â€""#;
+        println!("Input bytes: {:?}", input.as_bytes());
+        println!("Input chars: {:?}", input.chars().collect::<Vec<_>>());
+
+        let matches: Vec<_> = UTF8_DETECTOR_RE.find_iter(input).collect();
+        println!("Number of matches: {}", matches.len());
+        for mat in matches {
+            println!("Match: {:?} at {}..{}", mat.as_str(), mat.start(), mat.end());
+        }
+    }
 
     #[test]
     fn test_uncode_html_tag() {
