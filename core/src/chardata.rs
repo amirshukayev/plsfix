@@ -336,7 +336,7 @@ lazy_static! {
 [{utf8_first_of_3}][{utf8_continuation}]{{2}}
 |
 [{utf8_first_of_4}][{utf8_continuation}]{{3}}
-)+",
+){{1,2048}}",
             // Letters that decode to 0x80 - 0xBF in a Latin-1-like encoding,
             // and don't usually stand for themselves when adjacent to mojibake.
             // This excludes spaces, dashes, quotation marks, and ellipses.
