@@ -518,6 +518,26 @@ mod tests {
     }
 
     #[test]
+    fn test_french_accents_mojibake() {
+        // Test Ã¨ (è) and Ã© (é) mojibake
+        let input = "l'Ã¨re Biden pour l'achat de véhicules électriques et la production d'Ã©nergie propre";
+        let result = decode_inconsistent_utf8(input);
+        assert_eq!(result, "l'ère Biden pour l'achat de véhicules électriques et la production d'énergie propre");
+    }
+
+    #[test]
+    fn test_french_full_text_mojibake() {
+        use crate::fix_text;
+
+        let input = r#"« Ce projet de loi budgétaire massif, scandaleux et truffé de mesures clientéliste est une abomination répugnante », a écrit Musk dans un message publié sur les réseaux sociaux. « Honte à ceux qui ont voté pour. ». Il a fait valoir que le coût du roll over de la dette fédérale absorberait un quart des dépenses fédérales (c'est actuellement 18 %). Le projet de loi qualifié de « merveilleux » par Donald Trump et adopté par la Chambre des représentants devrait réduire les recettes fédérales d'environ 4 000 milliards de dollars sur dix ans (elles s'élèvent actuellement à environ 5.000 milliards par an), ajoutant environ 2 500 milliards de dollars au déficit fédéral sur cette période. Le tout assorti de coupes de plusieurs centaines de milliards de dollars dans les programmes de protection sociale tels que Medicaid et les coupons alimentaires. Cette mesure supprimerait également de manière radicale les avantages fiscaux accordés sous l'Ã¨re Biden pour l'achat de véhicules électriques et la production d'Ã©nergie propre, des changements que l'entreprise Tesla, dont Elon Musk est propriétaire, a critiqués."#;
+
+        let expected = r#"« Ce projet de loi budgétaire massif, scandaleux et truffé de mesures clientéliste est une abomination répugnante », a écrit Musk dans un message publié sur les réseaux sociaux. « Honte à ceux qui ont voté pour. ». Il a fait valoir que le coût du roll over de la dette fédérale absorberait un quart des dépenses fédérales (c'est actuellement 18 %). Le projet de loi qualifié de « merveilleux » par Donald Trump et adopté par la Chambre des représentants devrait réduire les recettes fédérales d'environ 4 000 milliards de dollars sur dix ans (elles s'élèvent actuellement à environ 5.000 milliards par an), ajoutant environ 2 500 milliards de dollars au déficit fédéral sur cette période. Le tout assorti de coupes de plusieurs centaines de milliards de dollars dans les programmes de protection sociale tels que Medicaid et les coupons alimentaires. Cette mesure supprimerait également de manière radicale les avantages fiscaux accordés sous l'ère Biden pour l'achat de véhicules électriques et la production d'énergie propre, des changements que l'entreprise Tesla, dont Elon Musk est propriétaire, a critiqués."#;
+
+        let result = fix_text(input, None);
+        assert_eq!(result, expected);
+    }
+
+    #[test]
     fn test_em_dash_regex_match() {
         use crate::chardata::UTF8_DETECTOR_RE;
 
