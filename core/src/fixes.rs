@@ -445,22 +445,52 @@ pub fn decode_inconsistent_utf8(text: &str) -> Cow<str> {
         if should_process {
             result.push_str(&text[last_end..s]);
             let substr = mat.as_str();
-            if is_bad(&substr) {
-                // Only attempt to fix if this substring is bad
-                use crate::codecs::sloppy::SLOPPY_WINDOWS_1252;
-                // Try Windows-1252 encoding first (most common case)
-                if let Ok(mut encoded_bytes) = SLOPPY_WINDOWS_1252.encode(substr) {
-                    // Try restore_byte_a0 to handle cases where space should be non-breaking space
-                    let restored_bytes = restore_byte_a0(&encoded_bytes);
-                    if restored_bytes != encoded_bytes {
-                        encoded_bytes = restored_bytes;
+            if substr.len() < text.len() && is_bad(&substr) {
+                // Try all encodings like the original implementation does
+                use crate::chardata::{CHARMAP_ENCODINGS, possible_encoding};
+                use crate::chardata::ALTERED_UTF8_RE;
+                use crate::codecs::utf8_variants;
+
+                let mut fixed = None;
+                for (codec_type, encoding) in CHARMAP_ENCODINGS.iter() {
+                    // Check if this encoding is possible for this substring
+                    if !possible_encoding(substr, *codec_type) {
+                        continue;
                     }
 
-                    if let Ok(fixed_str) = std::str::from_utf8(&encoded_bytes) {
-                        result.push_str(fixed_str);
-                    } else {
-                        result.push_str(substr);
+                    if let Ok(mut encoded_bytes) = encoding.encode(substr) {
+                        // Try restore_byte_a0
+                        if ALTERED_UTF8_RE.is_match(&encoded_bytes) {
+                            let restored_bytes = restore_byte_a0(&encoded_bytes);
+                            if restored_bytes != encoded_bytes {
+                                encoded_bytes = restored_bytes;
+                            }
+                        }
+
+                        // Try replace_lossy_sequences for sloppy encodings
+                        if encoding.name().starts_with("sloppy") {
+                            let replaced_bytes = replace_lossy_sequences(&encoded_bytes);
+                            if replaced_bytes != encoded_bytes {
+                                encoded_bytes = replaced_bytes;
+                            }
+                        }
+
+                        // Try decoding as UTF-8 or UTF-8 variant
+                        let decoded = if encoded_bytes.contains(&0xED) || encoded_bytes.contains(&0xC0) {
+                            utf8_variants::variant_decode(&encoded_bytes).ok()
+                        } else {
+                            std::str::from_utf8(&encoded_bytes).ok().map(|s| s.to_string())
+                        };
+
+                        if let Some(decoded_str) = decoded {
+                            fixed = Some(decoded_str);
+                            break;
+                        }
                     }
+                }
+
+                if let Some(fixed_str) = fixed {
+                    result.push_str(&fixed_str);
                 } else {
                     result.push_str(substr);
                 }
@@ -532,6 +562,17 @@ mod tests {
         let input = r#"« Ce projet de loi budgétaire massif, scandaleux et truffé de mesures clientéliste est une abomination répugnante », a écrit Musk dans un message publié sur les réseaux sociaux. « Honte à ceux qui ont voté pour. ». Il a fait valoir que le coût du roll over de la dette fédérale absorberait un quart des dépenses fédérales (c'est actuellement 18 %). Le projet de loi qualifié de « merveilleux » par Donald Trump et adopté par la Chambre des représentants devrait réduire les recettes fédérales d'environ 4 000 milliards de dollars sur dix ans (elles s'élèvent actuellement à environ 5.000 milliards par an), ajoutant environ 2 500 milliards de dollars au déficit fédéral sur cette période. Le tout assorti de coupes de plusieurs centaines de milliards de dollars dans les programmes de protection sociale tels que Medicaid et les coupons alimentaires. Cette mesure supprimerait également de manière radicale les avantages fiscaux accordés sous l'Ã¨re Biden pour l'achat de véhicules électriques et la production d'Ã©nergie propre, des changements que l'entreprise Tesla, dont Elon Musk est propriétaire, a critiqués."#;
 
         let expected = r#"« Ce projet de loi budgétaire massif, scandaleux et truffé de mesures clientéliste est une abomination répugnante », a écrit Musk dans un message publié sur les réseaux sociaux. « Honte à ceux qui ont voté pour. ». Il a fait valoir que le coût du roll over de la dette fédérale absorberait un quart des dépenses fédérales (c'est actuellement 18 %). Le projet de loi qualifié de « merveilleux » par Donald Trump et adopté par la Chambre des représentants devrait réduire les recettes fédérales d'environ 4 000 milliards de dollars sur dix ans (elles s'élèvent actuellement à environ 5.000 milliards par an), ajoutant environ 2 500 milliards de dollars au déficit fédéral sur cette période. Le tout assorti de coupes de plusieurs centaines de milliards de dollars dans les programmes de protection sociale tels que Medicaid et les coupons alimentaires. Cette mesure supprimerait également de manière radicale les avantages fiscaux accordés sous l'ère Biden pour l'achat de véhicules électriques et la production d'énergie propre, des changements que l'entreprise Tesla, dont Elon Musk est propriétaire, a critiqués."#;
+
+        let result = fix_text(input, None);
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_russian_mojibake() {
+        use crate::fix_text;
+
+        let input = " РІ РЅРѕРІРѕС‡РµР±РѕРєСЃР°СЂСЃРєРµ - значит переводить в свое свое будущее, поэтому выбор компании следует подходить серьезно.";
+        let expected = " РІ новочебоксарске - значит переводить в свое свое будущее, поэтому выбор компании следует подходить серьезно.";
 
         let result = fix_text(input, None);
         assert_eq!(result, expected);
