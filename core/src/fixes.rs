@@ -408,21 +408,19 @@ pub fn decode_inconsistent_utf8(text: &str) -> Cow<str> {
     This is used as a transcoder within `fix_encoding`.
     */
 
-    let result = UTF8_DETECTOR_RE.replace_all(&text, |mat: &fancy_regex::Captures| {
-        let substr = mat.get(0).unwrap().as_str();
-
-        if substr.len() < text.len() && is_bad(&substr) {
-            let fixed = fix_encoding_and_explain(&substr, false, None);
-            fixed.text
-        } else {
-            substr.to_string()
-        }
-    });
-
-    result
+    UTF8_DETECTOR_RE
+        .try_replacen(&text, 0, |mat: &fancy_regex::Captures| {
+            let substr = mat.get(0).unwrap().as_str();
+            if substr.len() < text.len() && is_bad(&substr) {
+                fix_encoding_and_explain(&substr, false, None).text
+            } else {
+                substr.to_string()
+            }
+        })
+        .unwrap_or(Cow::Borrowed(text))
 }
 
-fn _c1_fixer(mat: &fancy_regex::Captures) -> String {
+fn _c1_fixer(mat: &regex::Captures) -> String {
     let mat = mat.get(0).unwrap().as_str().to_string();
 
     let encoded = LATIN_1.encode(&mat);
@@ -438,7 +436,7 @@ pub fn fix_c1_controls(text: &str) -> Cow<str> {
     If text still contains C1 control characters, treat them as their
     Windows-1252 equivalents. This matches what Web browsers do.
     */
-    C1_CONTROL_RE.replace_all(text, |caps: &fancy_regex::Captures| _c1_fixer(&caps))
+    C1_CONTROL_RE.replace_all(text, |caps: &regex::Captures| _c1_fixer(&caps))
 }
 
 #[cfg(test)]
