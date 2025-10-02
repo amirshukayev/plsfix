@@ -242,8 +242,8 @@ lazy_static! {
     This regex matches C1 control characters, which occupy some of the positions
     in the Latin-1 character map that Windows assigns to other characters instead.
     */
-    pub static ref C1_CONTROL_RE: fancy_regex::Regex =
-        fancy_regex::Regex::new(r"[\x80-\x9f]").unwrap();
+    pub static ref C1_CONTROL_RE: Regex =
+        Regex::new(r"[\x80-\x9f]").unwrap();
 
     /*
     A translate mapping that breaks ligatures made of Latin letters. While
@@ -327,7 +327,7 @@ lazy_static! {
     fixed when they don't see it.
     */
     pub static ref UTF8_DETECTOR_RE: fancy_regex::Regex = {
-        fancy_regex::Regex::new(
+        fancy_regex::RegexBuilder::new(
         &format!(
             r"(?<![{utf8_continuation_strict}])
 (
@@ -352,8 +352,10 @@ lazy_static! {
             // including a space standing in for 0xA0
             utf8_continuation = r"\x80-\xbfĄąĽľŁłŒœŚśŞşŠšŤťŸŹźŻżŽžƒˆˇ˘˛˜˝΄΅ΆΈΉΊΌΎΏЁЂЃЄЅІЇЈЉЊЋЌЎЏёђѓєѕіїјљњћќўџҐґ–—―‘’‚“”„†‡•…‰‹›€№™ "
         )
-        .replace("\n", ""),
+        .replace("\n", "")
     )
+    .backtrack_limit(10_000_000)
+    .build()
     .expect("Failed to compile the regex")
     };
 }
